@@ -1,0 +1,30 @@
+[project]
+name = "mp4-2-webm"
+version = "1.0.0-dev.1"
+description = "Convert MP4 files to webM easily."
+authors = [
+    {name = "Taylor B.",email = "t.blackstone@inspyre.tech"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flask (>=3.1.2,<4.0.0)",
+    "ffmpeg-python (>=0.2.0,<0.3.0)",
+    "streamlit (>=1.51.0,<2.0.0)"
+]
+
+[project.scripts]
+mp4-2-webm = "mp4_2_webm.app:run"
+
+[dependency-groups]
+dev = [
+    "ipython (>=9.7.0,<10.0.0)",
+    "prompt-toolkit (>=3.0.52,<4.0.0)",
+    "ptipython (>=1.0.1,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
