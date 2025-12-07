@@ -225,10 +225,31 @@ Owns:
         )
 
         convert_all = False
+        convert_all_gif = False
+        convert_all_four_chan = False
         if uploads:
-            convert_all = st.button(
-                "Convert ALL uploads", type="primary", help="Run conversions for every file below"
-            )
+            bulk_col1, bulk_col2, bulk_col3 = st.columns([1, 1, 1])
+
+            with bulk_col1:
+                convert_all = st.button(
+                    "Convert ALL uploads",
+                    type="primary",
+                    help="Run conversions for every file below",
+                )
+
+            with bulk_col2:
+                convert_all_gif = st.checkbox(
+                    "Convert all as GIF",
+                    key="convert_all_gif",
+                    help="When enabled, bulk conversions output GIFs instead of WebMs.",
+                )
+
+            with bulk_col3:
+                convert_all_four_chan = st.checkbox(
+                    "Bulk 4chan-friendly outputs",
+                    key="convert_all_four_chan",
+                    help="Apply scaling/compression during bulk conversion to help keep files ≤ 6 MB.",
+                )
 
         if not uploads:
             return
@@ -267,9 +288,12 @@ Owns:
                     key=f"convert_{idx}",
                 )
 
+                active_gif_mode = convert_all_gif if convert_all else gif_mode
+                active_four_chan = convert_all_four_chan if convert_all else four_chan_safe
+
                 if convert_all or convert_button:
                     base = uuid.uuid4().hex
-                    ext = "gif" if gif_mode else "webm"
+                    ext = "gif" if active_gif_mode else "webm"
                     out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
 
                     progress_placeholder = st.empty()
@@ -281,10 +305,10 @@ Owns:
 
                     status.write("Converting… hold tight…")
 
-                    if gif_mode:
-                        self.converter.convert_to_gif(tmp_in.name, out_path, update, four_chan_safe)
+                    if active_gif_mode:
+                        self.converter.convert_to_gif(tmp_in.name, out_path, update, active_four_chan)
                     else:
-                        self.converter.convert_async(tmp_in.name, out_path, update, four_chan_safe)
+                        self.converter.convert_async(tmp_in.name, out_path, update, active_four_chan)
 
                     status.write("✅ Done!")
 
@@ -298,7 +322,7 @@ Owns:
                     output_size = Path(out_path).stat().st_size
                     size_mb = output_size / (1024 * 1024)
                     st.caption(f"Output size: {size_mb:.2f} MB")
-                    if four_chan_safe and size_mb > 6:
+                    if active_four_chan and size_mb > 6:
                         st.warning("Output is still over 6 MB. Consider trimming duration or lowering resolution.")
 
                     with open(out_path, "rb") as f:
@@ -306,7 +330,7 @@ Owns:
                             label=f"⬇️ Download {ext.upper()}",
                             data=f,
                             file_name=f"{base}.{ext}",
-                            mime="image/gif" if gif_mode else "video/webm",
+                            mime="image/gif" if active_gif_mode else "video/webm",
                             key=f"download_{idx}",
                         )
 
