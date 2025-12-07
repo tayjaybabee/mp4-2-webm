@@ -1,7 +1,6 @@
 import streamlit as st
 import tempfile
 import subprocess
-import threading
 import time
 import uuid
 import json
@@ -53,20 +52,15 @@ Handles:
             universal_newlines=True,
         )
 
-        # track pass 1 progress (coarse)
-        def read_pass1():
-            for line in process1.stdout:
-                line = line.strip()
-                if line.startswith("out_time_ms"):
-                    value = line.split("=")[1]
-                    if value.isdigit():
-                        pct = (int(value) / 1000000) * 50  # palette gen counts ~half
-                        progress_cb(min(int(pct), 50))
+        for line in process1.stdout:
+            line = line.strip()
+            if line.startswith("out_time_ms"):
+                value = line.split("=")[1]
+                if value.isdigit():
+                    pct = (int(value) / 1000000) * 50  # palette gen counts ~half
+                    progress_cb(min(int(pct), 50))
 
-        t1 = threading.Thread(target=read_pass1)
-        t1.start()
-        while process1.poll() is None: time.sleep(0.05)
-        t1.join()
+        process1.wait()
 
         # ---- PASS 2: apply palette and generate GIF ----
         process2 = subprocess.Popen(
@@ -84,19 +78,15 @@ Handles:
             universal_newlines=True,
         )
 
-        def read_pass2():
-            for line in process2.stdout:
-                line = line.strip()
-                if line.startswith("out_time_ms"):
-                    value = line.split("=")[1]
-                    if value.isdigit():
-                        pct = 50 + (int(value) / 1000000) * 50
-                        progress_cb(min(int(pct), 100))
+        for line in process2.stdout:
+            line = line.strip()
+            if line.startswith("out_time_ms"):
+                value = line.split("=")[1]
+                if value.isdigit():
+                    pct = 50 + (int(value) / 1000000) * 50
+                    progress_cb(min(int(pct), 100))
 
-        t2 = threading.Thread(target=read_pass2)
-        t2.start()
-        while process2.poll() is None: time.sleep(0.05)
-        t2.join()
+        process2.wait()
 
         # Cleanup
         try:
@@ -141,34 +131,28 @@ Handles:
             universal_newlines=True,
         )
 
-        # Step 3 — read progress in a thread
-        def read_progress():
-            for line in process.stdout:
-                line = line.strip()
+        # Step 3 — read progress inline (Streamlit callbacks must run in-session)
+        for line in process.stdout:
+            line = line.strip()
 
-                if total_ms and line.startswith("out_time_ms"):
-                    value = line.split("=")[1]
+            if total_ms and line.startswith("out_time_ms"):
+                value = line.split("=")[1]
 
-                    # Skip N/A or other invalid values
-                    if not value.isdigit():
-                        continue
+                # Skip N/A or other invalid values
+                if not value.isdigit():
+                    continue
 
-                    ms = int(value)
-                    pct = (ms / total_ms) * 100
-                    progress_cb(min(int(pct), 100))
+                ms = int(value)
+                pct = (ms / total_ms) * 100
+                progress_cb(min(int(pct), 100))
 
-
-            process.stdout.close()
-
-        thread = threading.Thread(target=read_progress)
-        thread.start()
+        process.stdout.close()
 
         # Step 4 — wait for completion without blocking UI
         while process.poll() is None:
             time.sleep(0.1)
 
         progress_cb(100)
-        thread.join()
 
 
 # =============================================================================
@@ -205,6 +189,10 @@ Owns:
         tmp_in.flush()
 
         # ---------------------------------------------------------------------
+        st.subheader("🎞️ Source Preview")
+        st.video(tmp_in.name)
+
+        # ---------------------------------------------------------------------
         st.subheader("📊 Metadata")
         meta = self.converter.get_metadata(tmp_in.name)
         st.json(meta)
@@ -234,8 +222,10 @@ Owns:
             status.write("✅ Done!")
 
             if ext == "gif":
+                st.subheader("🖼️ Result Preview")
                 st.image(out_path)
             else:
+                st.subheader("🎬 Result Preview")
                 st.video(out_path)
 
             with open(out_path, "rb") as f:
