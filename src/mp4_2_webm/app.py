@@ -171,6 +171,14 @@ Owns:
     def __init__(self):
         self.converter = VideoConverter()
 
+    # ---------------------------------------------------------------------
+    def _centered_video(self, path: str):
+        """Display a video at a consistent medium width."""
+
+        left, center, right = st.columns([1, 2, 1])
+        with center:
+            st.video(path)
+
     # -------------------------------------------------------------------------
     def render(self):
         st.set_page_config(page_title="MP4 → WebM Converter", layout="wide")
@@ -190,7 +198,7 @@ Owns:
 
         # ---------------------------------------------------------------------
         st.subheader("🎞️ Source Preview")
-        st.video(tmp_in.name)
+        self._centered_video(tmp_in.name)
 
         # ---------------------------------------------------------------------
         st.subheader("📊 Metadata")
@@ -226,7 +234,7 @@ Owns:
                 st.image(out_path)
             else:
                 st.subheader("🎬 Result Preview")
-                st.video(out_path)
+                self._centered_video(out_path)
 
             with open(out_path, "rb") as f:
                 st.download_button(
