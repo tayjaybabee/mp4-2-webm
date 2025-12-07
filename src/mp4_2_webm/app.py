@@ -32,19 +32,29 @@ Handles:
         except ffmpeg.Error:
             return {}
 
-    def convert_to_gif(self, in_path: str, out_path: str, progress_cb):
-        """Two-pass high-quality GIF creation with progress updates."""
+    def convert_to_gif(self, in_path: str, out_path: str, progress_cb, four_chan_safe: bool):
+        """Two-pass GIF creation with optional 4chan-safe constraints."""
 
         palette_path = out_path + "_palette.png"
+
+        # Keep GIFs modest in size when targeting 4chan
+        gif_filters = ["fps=10"]
+        if four_chan_safe:
+            gif_filters.append("scale='min(720,iw)':-2")
+
+        filter_chain = ",".join(gif_filters)
 
         # ---- PASS 1: palette generation ----
         process1 = subprocess.Popen(
             [
                 "ffmpeg",
-                "-i", in_path,
-                "-vf", "fps=10,palettegen",
+                "-i",
+                in_path,
+                "-vf",
+                f"{filter_chain},palettegen",
                 palette_path,
-                "-progress", "pipe:1",
+                "-progress",
+                "pipe:1",
                 "-nostats",
             ],
             stdout=subprocess.PIPE,
@@ -66,11 +76,15 @@ Handles:
         process2 = subprocess.Popen(
             [
                 "ffmpeg",
-                "-i", in_path,
-                "-i", palette_path,
-                "-lavfi", "fps=10,paletteuse",
+                "-i",
+                in_path,
+                "-i",
+                palette_path,
+                "-lavfi",
+                f"{filter_chain},paletteuse",
                 out_path,
-                "-progress", "pipe:1",
+                "-progress",
+                "pipe:1",
                 "-nostats",
             ],
             stdout=subprocess.PIPE,
@@ -96,7 +110,7 @@ Handles:
 
 
     # -------------------------------------------------------------------------
-    def convert_async(self, in_path: str, out_path: str, progress_cb):
+    def convert_async(self, in_path: str, out_path: str, progress_cb, four_chan_safe: bool):
         """
         Convert MP4 → WebM (VP9/Opus) using ffmpeg.
         Runs asynchronously using a thread and progress pipes.
@@ -112,19 +126,39 @@ Handles:
         total_ms = duration * 1000 if duration else None
 
         # Step 2 — launch ffmpeg
-        process = subprocess.Popen(
+        vf_filters = []
+        ffmpeg_args = [
+            "ffmpeg",
+            "-i",
+            in_path,
+            "-c:v",
+            "libvpx-vp9",
+        ]
+
+        if four_chan_safe:
+            vf_filters.append("scale='min(1280,iw)':-2")
+            ffmpeg_args.extend(["-crf", "32", "-b:v", "0", "-deadline", "realtime", "-fs", "6144k"])
+        else:
+            ffmpeg_args.extend(["-crf", str(self.quality_crf), "-b:v", "0"])  # VBR mode
+
+        if vf_filters:
+            ffmpeg_args.extend(["-vf", ",".join(vf_filters)])
+
+        ffmpeg_args.extend(
             [
-                "ffmpeg",
-                "-i", in_path,
-                "-c:v", "libvpx-vp9",
-                "-crf", str(self.quality_crf),
-                "-b:v", "0",                   # VBR mode
-                "-c:a", "libopus",
-                "-b:a", f"{self.audio_kbps}k",
-                "-progress", "pipe:1",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                f"{self.audio_kbps}k",
+                "-progress",
+                "pipe:1",
                 "-nostats",
                 out_path,
-            ],
+            ]
+        )
+
+        process = subprocess.Popen(
+            ffmpeg_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             bufsize=1,
@@ -194,64 +228,80 @@ Owns:
             return
 
         for idx, uploaded in enumerate(uploads):
-            st.markdown("---")
-            st.subheader(f"🎞️ Source Preview — {uploaded.name}")
+            with st.expander(f"{uploaded.name} — click to view controls", expanded=False):
+                st.subheader("🎞️ Source Preview")
 
-            # Write input to temp file per upload
-            tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-            tmp_in.write(uploaded.getbuffer())
-            tmp_in.flush()
+                # Write input to temp file per upload
+                tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                tmp_in.write(uploaded.getbuffer())
+                tmp_in.flush()
 
-            self._centered_video(tmp_in.name)
+                self._centered_video(tmp_in.name)
 
-            st.subheader("📊 Metadata")
-            meta = self.converter.get_metadata(tmp_in.name)
-            st.json(meta)
+                meta = self.converter.get_metadata(tmp_in.name)
 
-            gif_mode = st.checkbox(
-                "🖼️ Export as GIF instead of WebM",
-                key=f"gif_mode_{idx}",
-            )
-            convert_button = st.button(
-                "Convert to GIF" if gif_mode else "Convert to WebM",
-                key=f"convert_{idx}",
-            )
+                st.markdown("**📊 Metadata**")
+                st.json(meta)
 
-            if convert_button:
-                base = uuid.uuid4().hex
-                ext = "gif" if gif_mode else "webm"
-                out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
-
-                progress = st.progress(0, key=f"progress_{idx}")
-                status = st.empty()
-
-                def update(pct):
-                    progress.progress(pct)
-
-                status.write("Converting… hold tight…")
-
-                if gif_mode:
-                    self.converter.convert_to_gif(tmp_in.name, out_path, update)
-                else:
-                    self.converter.convert_async(tmp_in.name, out_path, update)
-
-                status.write("✅ Done!")
-
-                if ext == "gif":
-                    st.subheader("🖼️ Result Preview")
-                    st.image(out_path)
-                else:
-                    st.subheader("🎬 Result Preview")
-                    self._centered_video(out_path)
-
-                with open(out_path, "rb") as f:
-                    st.download_button(
-                        label=f"⬇️ Download {ext.upper()}",
-                        data=f,
-                        file_name=f"{base}.{ext}",
-                        mime="image/gif" if gif_mode else "video/webm",
-                        key=f"download_{idx}",
+                col1, col2 = st.columns(2)
+                with col1:
+                    gif_mode = st.checkbox(
+                        "🖼️ Export as GIF instead of WebM",
+                        key=f"gif_mode_{idx}",
                     )
+                with col2:
+                    four_chan_safe = st.checkbox(
+                        "✅ Keep output 4chan-friendly (≤6 MB, scaled)",
+                        key=f"chan_safe_{idx}",
+                        help="Downscales and compresses to stay under 6 MB where possible.",
+                    )
+
+                convert_button = st.button(
+                    "Convert to GIF" if gif_mode else "Convert to WebM",
+                    key=f"convert_{idx}",
+                )
+
+                if convert_button:
+                    base = uuid.uuid4().hex
+                    ext = "gif" if gif_mode else "webm"
+                    out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
+
+                    progress = st.progress(0, key=f"progress_{idx}")
+                    status = st.empty()
+
+                    def update(pct):
+                        progress.progress(pct)
+
+                    status.write("Converting… hold tight…")
+
+                    if gif_mode:
+                        self.converter.convert_to_gif(tmp_in.name, out_path, update, four_chan_safe)
+                    else:
+                        self.converter.convert_async(tmp_in.name, out_path, update, four_chan_safe)
+
+                    status.write("✅ Done!")
+
+                    if ext == "gif":
+                        st.subheader("🖼️ Result Preview")
+                        st.image(out_path)
+                    else:
+                        st.subheader("🎬 Result Preview")
+                        self._centered_video(out_path)
+
+                    output_size = Path(out_path).stat().st_size
+                    size_mb = output_size / (1024 * 1024)
+                    st.caption(f"Output size: {size_mb:.2f} MB")
+                    if four_chan_safe and size_mb > 6:
+                        st.warning("Output is still over 6 MB. Consider trimming duration or lowering resolution.")
+
+                    with open(out_path, "rb") as f:
+                        st.download_button(
+                            label=f"⬇️ Download {ext.upper()}",
+                            data=f,
+                            file_name=f"{base}.{ext}",
+                            mime="image/gif" if gif_mode else "video/webm",
+                            key=f"download_{idx}",
+                        )
 
 
 # =============================================================================
