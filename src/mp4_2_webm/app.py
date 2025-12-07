@@ -144,18 +144,13 @@ Handles:
         if vf_filters:
             ffmpeg_args.extend(["-vf", ",".join(vf_filters)])
 
-        ffmpeg_args.extend(
-            [
-                "-c:a",
-                "libopus",
-                "-b:a",
-                f"{self.audio_kbps}k",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                out_path,
-            ]
-        )
+        if four_chan_safe:
+            # Strip audio to further shrink files for 4chan limits
+            ffmpeg_args.append("-an")
+        else:
+            ffmpeg_args.extend(["-c:a", "libopus", "-b:a", f"{self.audio_kbps}k"])
+
+        ffmpeg_args.extend(["-progress", "pipe:1", "-nostats", out_path])
 
         process = subprocess.Popen(
             ffmpeg_args,
@@ -248,7 +243,7 @@ Owns:
                 convert_all_four_chan = st.checkbox(
                     "Bulk 4chan-friendly outputs",
                     key="convert_all_four_chan",
-                    help="Apply scaling/compression during bulk conversion to help keep files ≤ 6 MB.",
+                    help="Apply scaling/compression and strip audio during bulk conversion to help keep files ≤ 6 MB.",
                 )
 
         if not uploads:
@@ -280,7 +275,7 @@ Owns:
                     four_chan_safe = st.checkbox(
                         "✅ Keep output 4chan-friendly (≤6 MB, scaled)",
                         key=f"chan_safe_{idx}",
-                        help="Downscales and compresses to stay under 6 MB where possible.",
+                        help="Downscales, compresses, and strips audio to stay under 6 MB where possible.",
                     )
 
                 convert_button = st.button(
