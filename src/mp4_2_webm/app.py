@@ -224,6 +224,12 @@ Owns:
             "Upload one or more MP4 files", type=["mp4"], accept_multiple_files=True
         )
 
+        convert_all = False
+        if uploads:
+            convert_all = st.button(
+                "Convert ALL uploads", type="primary", help="Run conversions for every file below"
+            )
+
         if not uploads:
             return
 
@@ -261,12 +267,13 @@ Owns:
                     key=f"convert_{idx}",
                 )
 
-                if convert_button:
+                if convert_all or convert_button:
                     base = uuid.uuid4().hex
                     ext = "gif" if gif_mode else "webm"
                     out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
 
-                    progress = st.progress(0, key=f"progress_{idx}")
+                    progress_placeholder = st.empty()
+                    progress = progress_placeholder.progress(0)
                     status = st.empty()
 
                     def update(pct):
