@@ -186,63 +186,72 @@ Owns:
         st.title("🎬 MP4 → WebM Converter (VP9 + Opus • High Quality)")
         st.write("Upload an MP4 file, inspect metadata, and convert with live progress.")
 
-        uploaded = st.file_uploader("Upload your MP4", type=["mp4"])
+        uploads = st.file_uploader(
+            "Upload one or more MP4 files", type=["mp4"], accept_multiple_files=True
+        )
 
-        if not uploaded:
+        if not uploads:
             return
 
-        # Write input to temp file
-        tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        tmp_in.write(uploaded.read())
-        tmp_in.flush()
+        for idx, uploaded in enumerate(uploads):
+            st.markdown("---")
+            st.subheader(f"🎞️ Source Preview — {uploaded.name}")
 
-        # ---------------------------------------------------------------------
-        st.subheader("🎞️ Source Preview")
-        self._centered_video(tmp_in.name)
+            # Write input to temp file per upload
+            tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            tmp_in.write(uploaded.getbuffer())
+            tmp_in.flush()
 
-        # ---------------------------------------------------------------------
-        st.subheader("📊 Metadata")
-        meta = self.converter.get_metadata(tmp_in.name)
-        st.json(meta)
+            self._centered_video(tmp_in.name)
 
-        gif_mode = st.checkbox("🖼️ Export as GIF instead of WebM")
-        convert_button = st.button('Convert' if not gif_mode else 'Convert to gif')
+            st.subheader("📊 Metadata")
+            meta = self.converter.get_metadata(tmp_in.name)
+            st.json(meta)
 
-        # ---------------------------------------------------------------------
-        if convert_button:
-            base = uuid.uuid4().hex
-            ext = "gif" if gif_mode else "webm"
-            out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
+            gif_mode = st.checkbox(
+                "🖼️ Export as GIF instead of WebM",
+                key=f"gif_mode_{idx}",
+            )
+            convert_button = st.button(
+                "Convert to GIF" if gif_mode else "Convert to WebM",
+                key=f"convert_{idx}",
+            )
 
-            progress = st.progress(0)
-            status = st.empty()
+            if convert_button:
+                base = uuid.uuid4().hex
+                ext = "gif" if gif_mode else "webm"
+                out_path = str(Path(tempfile.gettempdir()) / f"{base}.{ext}")
 
-            def update(pct):
-                progress.progress(pct)
+                progress = st.progress(0, key=f"progress_{idx}")
+                status = st.empty()
 
-            status.write("Converting… hold tight…")
+                def update(pct):
+                    progress.progress(pct)
 
-            if gif_mode:
-                self.converter.convert_to_gif(tmp_in.name, out_path, update)
-            else:
-                self.converter.convert_async(tmp_in.name, out_path, update)
+                status.write("Converting… hold tight…")
 
-            status.write("✅ Done!")
+                if gif_mode:
+                    self.converter.convert_to_gif(tmp_in.name, out_path, update)
+                else:
+                    self.converter.convert_async(tmp_in.name, out_path, update)
 
-            if ext == "gif":
-                st.subheader("🖼️ Result Preview")
-                st.image(out_path)
-            else:
-                st.subheader("🎬 Result Preview")
-                self._centered_video(out_path)
+                status.write("✅ Done!")
 
-            with open(out_path, "rb") as f:
-                st.download_button(
-                    label=f"⬇️ Download {ext.upper()}",
-                    data=f,
-                    file_name=f"{base}.{ext}",
-                    mime="image/gif" if gif_mode else "video/webm",
-                )
+                if ext == "gif":
+                    st.subheader("🖼️ Result Preview")
+                    st.image(out_path)
+                else:
+                    st.subheader("🎬 Result Preview")
+                    self._centered_video(out_path)
+
+                with open(out_path, "rb") as f:
+                    st.download_button(
+                        label=f"⬇️ Download {ext.upper()}",
+                        data=f,
+                        file_name=f"{base}.{ext}",
+                        mime="image/gif" if gif_mode else "video/webm",
+                        key=f"download_{idx}",
+                    )
 
 
 # =============================================================================
